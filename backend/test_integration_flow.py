@@ -6,7 +6,6 @@ import io
 client = TestClient(app)
 
 def test_integration_flow():
-    print("--- Step 1: /analyze ---")
     csv_data = "hired,gender,years_experience,interview_score,technical_score\n1,M,5,80,90\n0,F,2,60,70\n1,F,6,85,88\n0,M,1,50,60\n1,M,4,75,85\n0,F,3,65,75\n"
     f = io.BytesIO(csv_data.encode("utf-8"))
     f.name = "demo_dataset.csv"
@@ -23,7 +22,6 @@ def test_integration_flow():
     analyze_data = res.json()
     analysis_id = analyze_data["analysis_id"]
 
-    print("\n--- Step 2: /mitigate ---")
     res2 = client.post("/mitigate/", json={
         "analysis_id": analysis_id,
         "method": "threshold_tuning"
@@ -33,7 +31,6 @@ def test_integration_flow():
     mitigate_data = res2.json()
     assert mitigate_data["comparison"] is not None
 
-    print("\n--- Step 3: /report ---")
     res3 = client.post("/report/", json={
         "analysis_id": analysis_id,
         "include_mitigation": True
@@ -42,3 +39,7 @@ def test_integration_flow():
     assert res3.status_code == 200, res3.text
     report_data = res3.json()
     assert report_data["report"] is not None
+
+if __name__ == "__main__":
+    import pytest
+    pytest.main([__file__])

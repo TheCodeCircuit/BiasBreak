@@ -1,66 +1,64 @@
 import os
+from pathlib import Path
 from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
 
 def test_robustness():
-    with open("../demo_data/synthetic_hiring_data.csv", "rb") as f:
+    csv_path = Path(__file__).parent.parent / "demo_data" / "synthetic_hiring_data.csv"
+    with open(csv_path, "rb") as f:
         csv_bytes = f.read()
 
-    print("\n=== Test 1: Different Valid Columns (sensitive=region) ===")
+    # Test 1
     res1 = client.post(
         "/analyze/",
         data={
             "target_column": "hired",
             "sensitive_column": "region",
-            "feature_columns": "assessment_score,interview_score"
+            "feature_columns": "years_experience,assessment_score"
         },
         files={"file": ("data.csv", csv_bytes, "text/csv")}
     )
-    if res1.status_code == 200:
-        print("SUCCESS! Status 200.")
-        print("Disparity Summaries:", res1.json()["disparity_summaries"])
-    else:
-        print(f"FAILED: {res1.status_code} - {res1.text}")
+    assert res1.status_code == 200
 
-    print("\n=== Test 2: Trash Target Column ===")
+    # Test 2
     res2 = client.post(
         "/analyze/",
         data={
             "target_column": "trash_target",
             "sensitive_column": "gender",
-            "feature_columns": "years_experience"
+            "feature_columns": "years_experience,assessment_score"
         },
         files={"file": ("data.csv", csv_bytes, "text/csv")}
     )
-    print(f"Result: {res2.status_code} - {res2.text}")
+    assert res2.status_code == 400
 
-    print("\n=== Test 3: Trash Sensitive Column ===")
+    # Test 3
     res3 = client.post(
         "/analyze/",
         data={
             "target_column": "hired",
             "sensitive_column": "trash_sensitive",
-            "feature_columns": "years_experience"
+            "feature_columns": "years_experience,assessment_score"
         },
         files={"file": ("data.csv", csv_bytes, "text/csv")}
     )
-    print(f"Result: {res3.status_code} - {res3.text}")
+    assert res3.status_code == 400
 
-    print("\n=== Test 4: Trash Feature Column ===")
+    # Test 4
     res4 = client.post(
         "/analyze/",
         data={
             "target_column": "hired",
             "sensitive_column": "gender",
-            "feature_columns": "years_experience,fake_feature"
+            "feature_columns": "fake_feature,years_experience"
         },
         files={"file": ("data.csv", csv_bytes, "text/csv")}
     )
-    print(f"Result: {res4.status_code} - {res4.text}")
+    assert res4.status_code == 400
 
-    print("\n=== Test 5: Non-Binary Target Column ===")
+    # Test 5
     res5 = client.post(
         "/analyze/",
         data={
@@ -70,21 +68,20 @@ def test_robustness():
         },
         files={"file": ("data.csv", csv_bytes, "text/csv")}
     )
-    print(f"Result: {res5.status_code} - {res5.text}")
+    assert res5.status_code == 400
 
-    print("\n=== Test 6: Missing Field ===")
+    # Test 6
     res6 = client.post(
         "/analyze/",
         data={
-            "target_column": "hired",
-            "sensitive_column": "gender"
-            # Missing feature_columns
+            "target_column": "hired"
+            # Missing fields
         },
         files={"file": ("data.csv", csv_bytes, "text/csv")}
     )
-    print(f"Result: {res6.status_code} - {res6.text}")
+    assert res6.status_code == 400 # 400 because validation fails before form parsing or in fastAPI
 
-    print("\n=== Test 7: Wrong File Type ===")
+    # Test 7
     res7 = client.post(
         "/analyze/",
         data={
@@ -92,9 +89,10 @@ def test_robustness():
             "sensitive_column": "gender",
             "feature_columns": "years_experience"
         },
-        files={"file": ("data.txt", b"just some text", "text/plain")}
+        files={"file": ("data.txt", b"hello text file", "text/plain")}
     )
-    print(f"Result: {res7.status_code} - {res7.text}")
+    assert res7.status_code == 400
 
 if __name__ == "__main__":
-    test_robustness()
+    import pytest
+    pytest.main([__file__])
