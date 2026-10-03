@@ -23,4 +23,4 @@ yarn-error.log*
 
 # OS files
 .DS_Store
-backend/tmp_runs
+tmp_runs

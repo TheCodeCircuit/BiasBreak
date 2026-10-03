@@ -16,7 +16,8 @@ from app.utils.validators import (
     validate_target_column,
     validate_sensitive_column,
     validate_feature_columns,
-    validate_binary_target
+    validate_binary_target,
+    validate_no_sensitive_leakage,
 )
 from app.services.preprocessing import preprocess_dataset
 from app.services.model import train_and_evaluate_model
@@ -57,6 +58,7 @@ async def analyze_data(
         validate_sensitive_column(df_raw, sensitive_column)
         validate_feature_columns(df_raw, features)
         validate_binary_target(df_raw, target_column)
+        validate_no_sensitive_leakage(sensitive_column, features)
         
         # 4. Preprocess Data
         X, y, sensitive_series, summary_data = preprocess_dataset(

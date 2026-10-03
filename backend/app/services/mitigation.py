@@ -27,6 +27,7 @@ from app.services.fairness_metrics import (
 )
 from app.services.preprocessing import preprocess_dataset
 from app.services.model import train_and_evaluate_model
+from app.core.constants import MAX_ACCURACY_DROP, THRESHOLD_SWEEP_RANGE
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ def apply_threshold_tuning(analysis_id: str) -> Dict[str, Any]:
     # ------------------------------------------------------------------
     # 2. Define the thresholds to try
     # ------------------------------------------------------------------
-    thresholds = [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]
+    thresholds = THRESHOLD_SWEEP_RANGE
 
     # ------------------------------------------------------------------
     # 3. Sweep every threshold and record fairness + accuracy
@@ -161,8 +162,6 @@ def apply_threshold_tuning(analysis_id: str) -> Dict[str, Any]:
     #   If every threshold violates the accuracy guard, we relax and just
     #   take the one with the smallest selection_rate_gap overall.
     # ------------------------------------------------------------------
-    MAX_ACCURACY_DROP = 0.05   # 5 percentage-point tolerance
-
     eligible = [
         r for r in sweep_results
         if (baseline_accuracy - r["accuracy"]) <= MAX_ACCURACY_DROP

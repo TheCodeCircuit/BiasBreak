@@ -1,29 +1,34 @@
 import os
 import json
 from pathlib import Path
+
+import google.generativeai as genai
 from dotenv import load_dotenv
+
 from app.utils.run_store import RUNS_ROOT, load_run
+from app.core.constants import GEMINI_MODEL_NAME
 
 # Load environment variables from a .env file if present
 load_dotenv()
 
+
 def assemble_report_input(analysis_id: str, include_mitigation: bool = True) -> dict:
     """
     Loads saved baseline analysis data and an optional mitigation result,
-    building one clean structured dictionary containing only the facts needed 
+    building one clean structured dictionary containing only the facts needed
     for explanation (whether by rules or Gemini).
     """
     run_dir = RUNS_ROOT / analysis_id
     if not run_dir.exists():
         raise ValueError(f"Analysis ID {analysis_id} not found.")
-        
+
     run_data = load_run(analysis_id)
     if not run_data:
         raise ValueError(f"Could not load data for Analysis ID {analysis_id}.")
-        
+
     meta = run_data.get("meta", {})
     metrics = run_data.get("metrics", {})
-    
+
     report_input = {
         "target_column": meta.get("target_column"),
         "sensitive_column": meta.get("sensitive_column"),
@@ -33,22 +38,20 @@ def assemble_report_input(analysis_id: str, include_mitigation: bool = True) -> 
         "baseline_disparity_summary": metrics.get("disparity_summaries"),
         "warnings": metrics.get("risk_flags"),
     }
-    
+
     # Optionally load the most recent mitigation result if present
     mitigation_files = list(run_dir.glob("mitigation_*.json"))
     if include_mitigation and mitigation_files:
         latest_mitig_file = max(mitigation_files, key=lambda p: p.stat().st_mtime)
         with open(latest_mitig_file, "r", encoding="utf-8") as f:
             mitig_data = json.load(f)
-            
+
         report_input["mitigation_method"] = mitig_data.get("strategy_used", "Unknown")
         report_input["after_accuracy"] = mitig_data.get("after_accuracy")
         report_input["comparison"] = mitig_data.get("comparison")
-        
+
     return report_input
 
-import os
-import google.generativeai as genai
 
 def generate_gemini_report(report_input: dict) -> dict:
     """
@@ -62,10 +65,10 @@ def generate_gemini_report(report_input: dict) -> dict:
 
     # Configure the Gemini client
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    
+    model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+
     data_str = json.dumps(report_input, indent=2, default=str)
-    
+
     prompt = f"""
 You are an expert AI fairness auditor. Your job is to explain the following bias analysis metrics in simple, professional, frontend-friendly terms.
 
@@ -86,27 +89,27 @@ Return ONLY valid JSON.
     try:
         response = model.generate_content(prompt)
         text = response.text.strip()
-        
+
         # Clean up potential markdown formatting from the response
         if text.startswith("```json"):
             text = text[7:]
         elif text.startswith("```"):
             text = text[3:]
-            
+
         if text.endswith("```"):
             text = text[:-3]
-            
+
         gemini_dict = json.loads(text.strip())
-        
+
         return {
             "executive_summary": gemini_dict.get("executive_summary", "Summary not generated."),
             "detailed_findings": gemini_dict.get("detailed_findings", "Findings not generated."),
-            "recommendations": gemini_dict.get("recommendations", [])
+            "recommendations": gemini_dict.get("recommendations", []),
         }
-        
+
     except Exception as e:
-        # We catch any failure (API down, rate limit, bad JSON parsing)
-        # and raise it so the caller knows to trigger the fallback.
+        # Catch any failure (API down, rate limit, bad JSON parsing)
+        # and raise so the caller knows to trigger the fallback.
         raise RuntimeError(f"Gemini generation failed: {e}")
 
 
@@ -120,10 +123,10 @@ def generate_fallback_report(report_input: dict) -> dict:
     acc = report_input.get("baseline_accuracy", 0.0)
     warnings = report_input.get("warnings", [])
     mitigation_method = report_input.get("mitigation_method")
-    
+
     # 1. Title & Summary -> Executive Summary
     title = f"Bias Analysis Report: {target} by {sensitive}"
-    
+
     if mitigation_method:
         summary = (
             f"This report evaluates the fairness of the baseline model and the impact of the '{mitigation_method}' "
@@ -136,12 +139,12 @@ def generate_fallback_report(report_input: dict) -> dict:
             f"in '{sensitive}'. The baseline model achieved an accuracy of {acc:.1%}. "
             "No mitigation strategy has been applied yet."
         )
-        
+
     executive_summary = f"### {title}\n\n{summary}"
-    
+
     # 2. Detailed Findings (Key Findings, Mitigation Impact, Risk Flags, Limitations)
     detailed_findings_parts = []
-    
+
     # Key Findings
     key_findings = "#### Key Findings\n"
     disparities = report_input.get("baseline_disparity_summary", [])
@@ -154,7 +157,7 @@ def generate_fallback_report(report_input: dict) -> dict:
     else:
         key_findings += "- No disparity metrics available.\n"
     detailed_findings_parts.append(key_findings)
-    
+
     # Before vs After (if mitigation exists)
     if mitigation_method:
         comp = report_input.get("comparison", {})
@@ -162,18 +165,18 @@ def generate_fallback_report(report_input: dict) -> dict:
         improved = comp.get("improved")
         acc_change = comp.get("accuracy_change", 0.0)
         gap_change = comp.get("selection_rate_gap_change", 0.0)
-        
+
         mitig_text = "#### Mitigation Impact\n"
         mitig_text += f"Using **{mitigation_method}**, the model's accuracy changed by {acc_change:+.1%} "
         if after_acc is not None:
             mitig_text += f"(new accuracy: {after_acc:.1%}). "
-        
+
         mitig_text += f"\nThe fairness gap changed by {gap_change:+.4f}. "
         if improved is True:
             mitig_text += "Overall, fairness improved.\n"
         elif improved is False:
             mitig_text += "Overall, fairness did not improve.\n"
-        
+
         detailed_findings_parts.append(mitig_text)
 
     # Risk Flags
@@ -182,13 +185,13 @@ def generate_fallback_report(report_input: dict) -> dict:
         for w in warnings:
             # w might be a dict or an object depending on how it was loaded.
             # load_run returns plain dicts.
-            severity = w.get('severity', 'Warning').upper() if isinstance(w, dict) else getattr(w, 'severity', 'WARNING').upper()
-            desc = w.get('description', '') if isinstance(w, dict) else getattr(w, 'description', '')
+            severity = w.get("severity", "Warning").upper() if isinstance(w, dict) else getattr(w, "severity", "WARNING").upper()
+            desc = w.get("description", "") if isinstance(w, dict) else getattr(w, "description", "")
             risk_text += f"- **[{severity}]**: {desc}\n"
     else:
         risk_text += "- No significant risks flagged.\n"
     detailed_findings_parts.append(risk_text)
-    
+
     # Limitations
     limitations = (
         "#### Limitations\n"
@@ -196,9 +199,9 @@ def generate_fallback_report(report_input: dict) -> dict:
         "It does not consider external factors, historical context, or qualitative impacts."
     )
     detailed_findings_parts.append(limitations)
-    
+
     detailed_findings = "\n\n".join(detailed_findings_parts)
-    
+
     # 3. Recommendations
     recommendations = []
     if warnings:
@@ -207,17 +210,18 @@ def generate_fallback_report(report_input: dict) -> dict:
             recommendations.append("Consider running a mitigation strategy (like Threshold Tuning or Feature Removal) to reduce the identified disparities.")
     else:
         recommendations.append("Continue monitoring the model for fairness as new data is collected.")
-        
+
     if mitigation_method and not report_input.get("comparison", {}).get("improved"):
         recommendations.append("The attempted mitigation did not improve fairness. Consider trying an alternative strategy.")
     elif mitigation_method:
         recommendations.append("Evaluate the trade-off between the accuracy change and the fairness improvement before deploying.")
-        
+
     return {
         "executive_summary": executive_summary,
         "detailed_findings": detailed_findings,
-        "recommendations": recommendations
+        "recommendations": recommendations,
     }
+
 
 def generate_final_report(analysis_id: str, include_mitigation: bool = True) -> dict:
     """
@@ -229,21 +233,21 @@ def generate_final_report(analysis_id: str, include_mitigation: bool = True) -> 
     """
     # 1. Assemble structured report input
     report_input = assemble_report_input(analysis_id, include_mitigation)
-    
+
     # 2. Always generate a fallback report first (so we have guaranteed content)
     final_report = generate_fallback_report(report_input)
-    
+
     # 3. Try to get Gemini to generate a better explanation
     try:
         gemini_report = generate_gemini_report(report_input)
-        
-        # 4. If Gemini succeeded, we replace the fallback content
+
+        # 4. If Gemini succeeded, replace the fallback content
         print(f"[Report] Successfully generated Gemini explanation for {analysis_id}")
         final_report = gemini_report
-        
+
     except Exception as e:
-        # 5. If Gemini fails (API key missing, timeout, bad JSON), we log it 
+        # 5. If Gemini fails (API key missing, timeout, bad JSON), log it
         #    and gracefully return the fallback report we already generated.
         print(f"[Report] Gemini generation failed, using rule-based fallback. Reason: {e}")
-        
+
     return final_report

@@ -8,6 +8,9 @@ from typing import List, Optional
 class GroupMetric(BaseModel):
     group_name: str
     pass_rate: float
+    count: int
+    false_positive_rate: float
+    false_negative_rate: float
 
 class DisparitySummary(BaseModel):
     metric_name: str
@@ -64,9 +67,9 @@ class ComparisonSummary(BaseModel):
 class MitigationResponse(BaseModel):
     status: str
     strategy_used: str
-    chosen_threshold: Optional[float]   # only set for threshold-tuning
-    baseline_accuracy: Optional[float]
-    after_accuracy: Optional[float]
+    chosen_threshold: Optional[float] = None   # only set for threshold-tuning
+    baseline_accuracy: Optional[float] = None
+    after_accuracy: Optional[float] = None
     comparison: ComparisonSummary
 
 # ---------------------------------------------------------
@@ -81,3 +84,16 @@ class ReportContent(BaseModel):
 class ReportResponse(BaseModel):
     status: str
     report: ReportContent
+
+# ---------------------------------------------------------
+# Request Models (centralised here to keep schemas consistent)
+# ---------------------------------------------------------
+
+class MitigateRequest(BaseModel):
+    analysis_id: str
+    method: str                     # "threshold_tuning" or "feature_removal"
+    params: Optional[dict] = None   # Required for feature_removal: {"feature_to_remove": "col"}
+
+class ReportRequest(BaseModel):
+    analysis_id: str
+    include_mitigation: bool = False

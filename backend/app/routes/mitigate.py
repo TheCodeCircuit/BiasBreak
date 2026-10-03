@@ -1,6 +1,4 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
 
 from app.schemas.response_models import (
     MitigationResponse,
@@ -8,21 +6,12 @@ from app.schemas.response_models import (
     MetricsBlock,
     DisparitySummary,
     GroupMetric,
+    MitigateRequest,
 )
 from app.services.mitigation import apply_threshold_tuning, apply_feature_removal
 from app.utils.run_store import save_mitigation_result
 
 router = APIRouter(prefix="/mitigate", tags=["Mitigate"])
-
-
-# ---------------------------------------------------------------------------
-# Request model
-# ---------------------------------------------------------------------------
-
-class MitigateRequest(BaseModel):
-    analysis_id: str
-    method: str                     # Currently only "threshold_tuning" is supported
-    params: Optional[dict] = None   # Reserved for future use (e.g. custom thresholds)
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +29,7 @@ async def mitigate_bias(request: MitigateRequest):
         Post-processing strategy: sweeps decision thresholds and picks the one
         that best reduces the selection-rate gap between groups while keeping
         overall accuracy within 5 pp of the baseline.
-        
+
     feature_removal
         Pre-processing strategy: removes a specific feature (e.g. a proxy for
         a sensitive attribute), re-preprocesses the data, and retrains the model.
@@ -61,46 +50,41 @@ async def mitigate_bias(request: MitigateRequest):
                    f"Try one of these: {supported_methods}",
         )
 
+    if request.method == "feature_removal":
+        if not request.params or "feature_to_remove" not in request.params:
+            raise HTTPException(
+                status_code=400,
+                detail="feature_removal requires 'feature_to_remove' in params.",
+            )
+
     # --- Run mitigation ---
     feature_removed = None
     try:
         if request.method == "threshold_tuning":
             result = apply_threshold_tuning(request.analysis_id)
-        elif request.method == "feature_removal":
-            if not request.params or "feature_to_remove" not in request.params:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="feature_removal requires 'feature_to_remove' in params."
-                )
+        else:  # feature_removal
             feature_removed = request.params["feature_to_remove"]
-            try:
-                result = apply_feature_removal(request.analysis_id, feature_removed)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+            result = apply_feature_removal(request.analysis_id, feature_removed)
 
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail="We couldn't find the original analysis. Please re-run the fairness analysis first.")
-
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="We couldn't find the original analysis. Please re-run the fairness analysis first.",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     # --- Assemble before / after metrics blocks ---
     before_metrics = MetricsBlock(
-        group_metrics=[
-            GroupMetric(**g) for g in result["baseline_group_metrics"]
-        ],
-        disparity_summaries=[
-            DisparitySummary(**d) for d in result["baseline_disparity_summaries"]
-        ],
+        group_metrics=[GroupMetric(**g) for g in result["baseline_group_metrics"]],
+        disparity_summaries=[DisparitySummary(**d) for d in result["baseline_disparity_summaries"]],
     )
 
     after_metrics = MetricsBlock(
-        group_metrics=[
-            GroupMetric(**g) for g in result["after_group_metrics"]
-        ],
-        disparity_summaries=[
-            DisparitySummary(**d) for d in result["after_disparity_summaries"]
-        ],
+        group_metrics=[GroupMetric(**g) for g in result["after_group_metrics"]],
+        disparity_summaries=[DisparitySummary(**d) for d in result["after_disparity_summaries"]],
     )
 
     response = MitigationResponse(
@@ -116,7 +100,7 @@ async def mitigate_bias(request: MitigateRequest):
             selection_rate_gap_change=result["impact"]["selection_rate_gap_change"],
             false_positive_rate_gap_change=result["impact"]["false_positive_rate_gap_change"],
             false_negative_rate_gap_change=result["impact"]["false_negative_rate_gap_change"],
-            improved=result["impact"]["improved"]
+            improved=result["impact"]["improved"],
         ),
     )
 
@@ -125,8 +109,7 @@ async def mitigate_bias(request: MitigateRequest):
         analysis_id=request.analysis_id,
         method=request.method,
         response_dict=response.model_dump(),
-        feature_removed=feature_removed
+        feature_removed=feature_removed,
     )
 
     return response
-

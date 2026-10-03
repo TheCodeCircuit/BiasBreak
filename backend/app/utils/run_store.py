@@ -158,22 +158,6 @@ def load_run(analysis_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def load_run_csv(analysis_id: str) -> Optional[pd.DataFrame]:
-    """
-    Load the raw saved CSV for a run as a DataFrame.
-
-    Returns None if not found (e.g. old run saved before this feature was added).
-    """
-    csv_path = RUNS_ROOT / analysis_id / "dataset.csv"
-    if not csv_path.exists():
-        return None
-    try:
-        return pd.read_csv(csv_path)
-    except Exception as exc:          # pragma: no cover
-        print(f"[run_store] WARNING: could not read CSV for run {analysis_id}: {exc}")
-        return None
-
-
 def run_exists(analysis_id: str) -> bool:
     """Quick check – does a saved run exist for this ID?"""
     return (RUNS_ROOT / analysis_id / "meta.json").exists()

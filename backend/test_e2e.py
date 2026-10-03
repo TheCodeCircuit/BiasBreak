@@ -4,7 +4,7 @@ from app.main import app
 
 client = TestClient(app)
 
-def run_tests():
+def test_e2e_flow():
     print("--- 1. Testing POST /analyze/ ---")
     with open("../demo_data/synthetic_hiring_data.csv", "rb") as f:
         file_bytes = f.read()
@@ -20,14 +20,10 @@ def run_tests():
         files={"file": ("synthetic_hiring_data.csv", file_bytes, "text/csv")}
     )
 
-    if response.status_code != 200:
-        print(f"FAILED: {response.text}")
-        return
-
+    assert response.status_code == 200, response.text
     data = response.json()
     analysis_id = data.get("analysis_id")
-    print(f"SUCCESS: Analysis ID generated -> {analysis_id}")
-    print(f"Baseline Accuracy: {data['model_summary']['overall_accuracy']:.4f}")
+    assert analysis_id is not None
     
     print("\n--- 2. Testing POST /mitigate/ (Threshold Tuning) ---")
     res_tt = client.post(
@@ -37,16 +33,7 @@ def run_tests():
             "method": "threshold_tuning"
         }
     )
-    if res_tt.status_code == 200:
-        tt_data = res_tt.json()
-        print("SUCCESS: Threshold Tuning applied!")
-        print(f"Chosen Threshold: {tt_data['chosen_threshold']}")
-        comp = tt_data['comparison']
-        print(f"Accuracy change: {comp['accuracy_change']:.4f}")
-        print(f"Selection Rate Gap change: {comp['selection_rate_gap_change']:.4f}")
-        print(f"Improved? {comp['improved']}")
-    else:
-        print(f"FAILED: {res_tt.text}")
+    assert res_tt.status_code == 200, res_tt.text
 
     print("\n--- 3. Testing POST /mitigate/ (Feature Removal) ---")
     res_fr = client.post(
@@ -57,48 +44,25 @@ def run_tests():
             "params": {"feature_to_remove": "college_tier"}
         }
     )
-    if res_fr.status_code == 200:
-        fr_data = res_fr.json()
-        print("SUCCESS: Feature Removal applied!")
-        comp = fr_data['comparison']
-        print(f"Accuracy change: {comp['accuracy_change']:.4f}")
-        print(f"Selection Rate Gap change: {comp['selection_rate_gap_change']:.4f}")
-        print(f"Improved? {comp['improved']}")
-    else:
-        print(f"FAILED: {res_fr.text}")
+    assert res_fr.status_code == 200, res_fr.text
 
-    return analysis_id
-if __name__ == "__main__":
-    analysis_id = run_tests()
+    print("\n--- 4. Testing Errors ---")
+    res_err1 = client.post("/mitigate/", json={"analysis_id": "fake", "method": "threshold_tuning"})
+    assert res_err1.status_code == 404
     
-    if analysis_id:
-        print("\n--- 4. Testing Errors ---")
-        res_err1 = client.post("/mitigate/", json={"analysis_id": "fake", "method": "threshold_tuning"})
-        print(f"Bad ID: {res_err1.status_code} - {res_err1.text}")
-        
-        res_err2 = client.post("/mitigate/", json={"analysis_id": analysis_id, "method": "magic_wand"})
-        print(f"Bad method: {res_err2.status_code} - {res_err2.text}")
-        
-        res_err3 = client.post("/mitigate/", json={"analysis_id": analysis_id, "method": "feature_removal"})
-        print(f"Missing feature: {res_err3.status_code} - {res_err3.text}")
-        
-        res_err4 = client.post("/mitigate/", json={"analysis_id": analysis_id, "method": "feature_removal", "params": {"feature_to_remove": "not_a_column"}})
-        print(f"Wrong feature: {res_err4.status_code} - {res_err4.text}")
-        
-        print("\n--- 5. Testing POST /report/ (Baseline Only) ---")
-        res_rep1 = client.post("/report/", json={"analysis_id": analysis_id, "include_mitigation": False})
-        if res_rep1.status_code == 200:
-            rep_data1 = res_rep1.json()
-            print("SUCCESS: Baseline Report generated!")
-            print(f"Status: {rep_data1['status']}")
-        else:
-            print(f"FAILED: {res_rep1.status_code} - {res_rep1.text}")
+    res_err2 = client.post("/mitigate/", json={"analysis_id": analysis_id, "method": "magic_wand"})
+    assert res_err2.status_code == 400
+    
+    res_err3 = client.post("/mitigate/", json={"analysis_id": analysis_id, "method": "feature_removal"})
+    assert res_err3.status_code == 400
+    
+    res_err4 = client.post("/mitigate/", json={"analysis_id": analysis_id, "method": "feature_removal", "params": {"feature_to_remove": "not_a_column"}})
+    assert res_err4.status_code == 400
+    
+    print("\n--- 5. Testing POST /report/ (Baseline Only) ---")
+    res_rep1 = client.post("/report/", json={"analysis_id": analysis_id, "include_mitigation": False})
+    assert res_rep1.status_code == 200, res_rep1.text
 
-        print("\n--- 6. Testing POST /report/ (With Mitigation) ---")
-        res_rep2 = client.post("/report/", json={"analysis_id": analysis_id, "include_mitigation": True})
-        if res_rep2.status_code == 200:
-            rep_data2 = res_rep2.json()
-            print("SUCCESS: Mitigation Report generated!")
-            print(f"Status: {rep_data2['status']}")
-        else:
-            print(f"FAILED: {res_rep2.status_code} - {res_rep2.text}")
+    print("\n--- 6. Testing POST /report/ (With Mitigation) ---")
+    res_rep2 = client.post("/report/", json={"analysis_id": analysis_id, "include_mitigation": True})
+    assert res_rep2.status_code == 200, res_rep2.text

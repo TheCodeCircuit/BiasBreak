@@ -2,6 +2,13 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, List
 
+from app.core.constants import (
+    SELECTION_RATE_GAP_THRESHOLD,
+    FPR_GAP_THRESHOLD,
+    FNR_GAP_THRESHOLD,
+    MIN_GROUP_SAMPLE_SIZE
+)
+
 def compute_group_metrics(y_true: pd.Series, y_pred: np.ndarray, sensitive_features: pd.Series) -> List[Dict[str, Any]]:
     """
     Computes fairness metrics for each demographic group.
@@ -75,8 +82,8 @@ def generate_risk_flags(group_metrics: List[Dict[str, Any]], disparities: Dict[s
     """
     flags = []
     
-    # Check for large disparate impact (using a 20% gap heuristic)
-    if disparities.get("selection_rate_gap", 0) >= 0.20:
+    # Check for large disparate impact
+    if disparities.get("selection_rate_gap", 0) >= SELECTION_RATE_GAP_THRESHOLD:
         flags.append({
             "severity": "High",
             "description": f"Significant disparity in selection rates ({disparities['selection_rate_gap']:.2f} gap). "
@@ -85,7 +92,7 @@ def generate_risk_flags(group_metrics: List[Dict[str, Any]], disparities: Dict[s
         
     # Check for small sample sizes
     for group in group_metrics:
-        if group["count"] < 30:
+        if group["count"] < MIN_GROUP_SAMPLE_SIZE:
             flags.append({
                 "severity": "Warning",
                 "description": f"Group '{group['group_name']}' has a very small test sample size ({group['count']}). "
@@ -107,17 +114,17 @@ def analyze_fairness(y_true: pd.Series, y_pred: np.ndarray, sensitive_features: 
         {
             "metric_name": "Selection Rate Gap",
             "value": float(disparities.get("selection_rate_gap", 0.0)),
-            "is_fair": bool(disparities.get("selection_rate_gap", 0.0) < 0.20)
+            "is_fair": bool(disparities.get("selection_rate_gap", 0.0) < SELECTION_RATE_GAP_THRESHOLD)
         },
         {
             "metric_name": "False Positive Rate Gap",
             "value": float(disparities.get("false_positive_rate_gap", 0.0)),
-            "is_fair": bool(disparities.get("false_positive_rate_gap", 0.0) < 0.10)
+            "is_fair": bool(disparities.get("false_positive_rate_gap", 0.0) < FPR_GAP_THRESHOLD)
         },
         {
             "metric_name": "False Negative Rate Gap",
             "value": float(disparities.get("false_negative_rate_gap", 0.0)),
-            "is_fair": bool(disparities.get("false_negative_rate_gap", 0.0) < 0.10)
+            "is_fair": bool(disparities.get("false_negative_rate_gap", 0.0) < FNR_GAP_THRESHOLD)
         }
     ]
     
