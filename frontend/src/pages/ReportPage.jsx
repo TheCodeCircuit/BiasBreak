@@ -1,283 +1,56 @@
 // ReportPage.jsx
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { fetchReport } from "../api/BreakBiasApi";
+import { ArrowLeftIcon, PrintIcon, ReportIcon, Spinner } from "../components/Icons";
+import { RISK, buildAuditStats, countOutcomes } from "../utils/fairness";
 
-function isPositiveDecision(value) {
-  const normalized = String(value).trim().toLowerCase();
+// Renders the backend's markdown-ish text (### headings, **bold**, - bullets) with the light theme.
+// The old renderText hard-coded dark-theme colours (#f8fafc, #94a3b8), unreadable on the white report.
+function RichText({ text }) {
+  if (!text) return null;
 
-  const { target, sensitive, rows, analysis_id, metrics } = location.state || {};
+  return text.split("\n").map((line, i) => {
+    const t = line.trim();
+    if (!t) return <div key={i} className="h-2" />;
 
-  const [reportData, setReportData] = useState(null);
-  const [loading, setLoading] = useState(true);
+    const heading = /^#{3,4}\s+(.*)/.exec(t);
+    const bullet = /^[-*]\s+(.*)/.exec(t);
+    const content = heading ? heading[1] : bullet ? bullet[1] : t;
 
-  useEffect(() => {
-    if (!analysis_id) { setLoading(false); return; }
-    const fetchReport = async () => {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/report/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ analysis_id, include_mitigation: true })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || "Failed to generate report");
-        setReportData(data.report);
-      } catch (err) {
-        console.error(err);
-        alert("Error fetching report: " + err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
-  }, [analysis_id]);
+    const parts = content.split(/(\*\*.*?\*\*)/g).map((part, j) =>
+      part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
+        <strong key={j} className="font-extrabold text-slate-950">{part.slice(2, -2)}</strong>
+      ) : (
+        part
+      )
+    );
 
-  const total = rows?.length || 0;
-  const selected = rows?.filter((row) => row[target] == 1).length || 0;
-  const rejected = total - selected;
-  const selectionRate = total ? ((selected / total) * 100).toFixed(1) : 0;
-
-  const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-
-  const renderText = (text) => {
-    if (!text) return null;
-    return text.split('\n').map((line, i) => {
-      let isHeader = false;
-      let displayLine = line;
-      if (line.startsWith('### ')) {
-        isHeader = true;
-        displayLine = line.substring(4);
-      } else if (line.startsWith('#### ')) {
-        isHeader = true;
-        displayLine = line.substring(5);
-      }
-
-      if (displayLine.trim() === '') {
-        return <div key={i} style={{ height: "8px" }} />;
-      }
-      
-      const parts = displayLine.split(/(\*\*.*?\*\*)/g);
-      const formattedParts = parts.map((part, j) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={j} style={{ color: "#f8fafc" }}>{part.slice(2, -2)}</strong>;
-        }
-        return part;
-      });
-
-      if (isHeader) {
-        return <h3 key={i} style={{ color: "#f1f5f9", marginTop: "20px", marginBottom: "8px", fontSize: "16px", fontWeight: 700 }}>{formattedParts}</h3>;
-      }
-      return <div key={i} style={{ marginBottom: "6px" }}>{formattedParts}</div>;
-    });
-  };
-
-  const StatRow = ({ label, value, mono = false }) => (
-    <div style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      padding: "12px 0",
-      borderBottom: "1px solid rgba(99,120,255,0.08)",
-    }}>
-      <span style={{ color: "#64748b", fontSize: "13px" }}>{label}</span>
-      <span style={{
-        fontFamily: mono ? "'Space Mono', monospace" : "'DM Sans', sans-serif",
-        fontWeight: 600,
-        color: "#f1f5f9",
-        fontSize: mono ? "14px" : "13px",
-      }}>{value}</span>
-    </div>
-  return (
-    value === 1 ||
-    value === true ||
-    normalized === "1" ||
-    normalized === "yes" ||
-    normalized === "true" ||
-    normalized === "selected" ||
-    normalized === "accepted" ||
-    normalized === "approved" ||
-    normalized === "hired" ||
-    normalized === "pass"
-  );
-}
-
-function computeReportStats(rows = [], target, sensitive) {
-  let selected = 0;
-  let rejected = 0;
-  const groups = {};
-
-  rows.forEach((row) => {
-    const group = String(row?.[sensitive] ?? "Unknown").trim() || "Unknown";
-    const isSelected = isPositiveDecision(row?.[target]);
-
-    if (!groups[group]) {
-      groups[group] = {
-        total: 0,
-        selected: 0,
-        rejected: 0,
-      };
-    }
-
-    groups[group].total += 1;
-
-    if (isSelected) {
-      selected += 1;
-      groups[group].selected += 1;
-    } else {
-      rejected += 1;
-      groups[group].rejected += 1;
-    }
+    if (heading) return <h4 key={i} className="mb-1 mt-4 text-base font-extrabold text-slate-950">{parts}</h4>;
+    if (bullet)
+      return (
+        <p key={i} className="flex gap-2 pl-1">
+          <span aria-hidden="true">•</span>
+          <span>{parts}</span>
+        </p>
+      );
+    return <p key={i}>{parts}</p>;
   });
-
-  const total = rows.length;
-  const selectionRate = total > 0 ? (selected / total) * 100 : 0;
-  const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
-
-  const groupEntries = Object.entries(groups)
-    .map(([group, data]) => ({
-      group,
-      total: data.total,
-      selected: data.selected,
-      rejected: data.rejected,
-      selectionRate: data.total > 0 ? (data.selected / data.total) * 100 : 0,
-    }))
-    .sort((a, b) => b.selectionRate - a.selectionRate);
-
-  const rates = groupEntries.map((entry) => entry.selectionRate);
-  const highestRate = rates.length ? Math.max(...rates) : 0;
-  const lowestRate = rates.length ? Math.min(...rates) : 0;
-  const disparityGap = rates.length > 1 ? highestRate - lowestRate : 0;
-
-  const fourFifthsFailed = groupEntries.some((entry) => {
-    if (highestRate === 0 || entry.selectionRate === highestRate) return false;
-    return entry.selectionRate / highestRate < 0.8;
-  });
-
-  const riskLevel =
-    disparityGap >= 30 ? "high" : disparityGap >= 15 ? "moderate" : "low";
-
-  return {
-    total,
-    selected,
-    rejected,
-    selectionRate,
-    rejectionRate,
-    groupEntries,
-    highestRate,
-    lowestRate,
-    disparityGap,
-    fourFifthsFailed,
-    riskLevel,
-  };
-}
-
-function getRiskMeta(riskLevel) {
-  if (riskLevel === "high") {
-    return {
-      label: "High Risk",
-      badgeClass: "badge-danger",
-      panelClass: "border-rose-100 bg-rose-50",
-      textClass: "text-rose-700",
-      summary:
-        "The audit found a large disparity between group selection rates. This requires investigation before deployment or decision-making use.",
-    };
-  }
-
-  if (riskLevel === "moderate") {
-    return {
-      label: "Moderate Risk",
-      badgeClass: "badge-warning",
-      panelClass: "border-amber-100 bg-amber-50",
-      textClass: "text-amber-700",
-      summary:
-        "The audit found a meaningful disparity between group selection rates. Review the data, features, and decision process before production use.",
-    };
-  }
-
-  return {
-    label: "Low Risk",
-    badgeClass: "badge-success",
-    panelClass: "border-emerald-100 bg-emerald-50",
-    textClass: "text-emerald-700",
-    summary:
-      "The audit did not find a large disparity under the current simplified selection-rate analysis. Continue monitoring with more complete fairness tests.",
-  };
-}
-
-function BackIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M19 12H5" />
-      <path d="m12 19-7-7 7-7" />
-    </svg>
-  );
-}
-
-function PrintIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M6 9V2h12v7" />
-      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-      <path d="M6 14h12v8H6z" />
-    </svg>
-  );
-}
-
-function ReportIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
-      <path d="M8 13h8" />
-      <path d="M8 17h6" />
-    </svg>
-  );
 }
 
 function EmptyReportState({ onBack }) {
   return (
     <div className="app-shell">
       <div className="top-stripe" />
-
       <main className="page-container flex min-h-[calc(100vh-4px)] items-center justify-center py-10">
         <div className="card card-glow max-w-xl p-8 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-rose-50 text-rose-600">
             <ReportIcon />
           </div>
-
-          <h1 className="mt-6 text-3xl font-extrabold tracking-[-0.055em] text-slate-950">
-            Report data missing
-          </h1>
-
+          <h1 className="mt-6 text-3xl font-extrabold tracking-[-0.055em] text-slate-950">Report data missing</h1>
           <p className="mt-3 text-sm leading-7 text-slate-500">
-            This report needs dashboard audit data. Go back to the upload flow and generate a dashboard first.
+            This report needs a completed analysis. Upload a CSV and run the analysis first (a page reload clears it).
           </p>
-
           <button type="button" onClick={onBack} className="btn btn-primary btn-lg mt-6">
             Back to upload
           </button>
@@ -293,149 +66,13 @@ function SummaryTile({ label, value, helper, tone = "slate" }) {
     success: "text-emerald-700",
     danger: "text-rose-700",
     warning: "text-amber-700",
-    primary: "text-indigo-700",
   }[tone];
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
-        {label}
-      </p>
-
-            {loading ? (
-              <div style={{ textAlign: "center", padding: "40px" }}>
-                <p style={{ color: "#6477ff", fontWeight: 600 }}>Generating AI Report...</p>
-              </div>
-            ) : reportData ? (
-              <>
-                {/* Section: Executive Summary */}
-                <div>
-                  <p style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6477ff", marginBottom: "16px" }}>
-                    03 — Executive Summary
-                  </p>
-                  <div style={{
-                    background: "rgba(99,120,255,0.05)",
-                    border: "1px solid rgba(99,120,255,0.12)",
-                    borderRadius: "12px",
-                    padding: "20px",
-                    marginBottom: "24px"
-                  }}>
-                    <div style={{ color: "#94a3b8", fontSize: "14px", lineHeight: 1.7 }}>
-                      {renderText(reportData.executive_summary)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section: Detailed Findings */}
-                <div>
-                  <p style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6477ff", marginBottom: "16px" }}>
-                    04 — Detailed Findings
-                  </p>
-                  <div style={{
-                    background: "rgba(99,120,255,0.02)",
-                    border: "1px solid rgba(99,120,255,0.08)",
-                    borderRadius: "12px",
-                    padding: "20px",
-                    marginBottom: "24px"
-                  }}>
-                    <div style={{ color: "#94a3b8", fontSize: "14px", lineHeight: 1.7 }}>
-                      {renderText(reportData.detailed_findings)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section: Recommendations */}
-                <div>
-                  <p style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6477ff", marginBottom: "16px" }}>
-                    05 — Recommendations
-                  </p>
-                  <ul style={{ color: "#94a3b8", fontSize: "14px", lineHeight: 1.7, paddingLeft: "20px" }}>
-                    {reportData.recommendations.map((rec, i) => (
-                      <li key={i} style={{ marginBottom: "8px" }}>{rec}</li>
-                    ))}
-                  </ul>
-                </div>
-              </>
-            ) : (
-              <p style={{ color: "#f43f5e" }}>Failed to load report data.</p>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="no-print" style={{
-            borderTop: "1px solid rgba(99,120,255,0.1)",
-            padding: "20px 32px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "12px",
-          }}>
-            <span style={{ fontSize: "12px", color: "#374151" }}>BreakBias Audit Engine · Confidential</span>
-            <div style={{ display: "flex", gap: "12px" }}>
-              <button
-                onClick={() => window.print()}
-                style={{
-                  background: "linear-gradient(135deg, #059669 0%, #10b981 100%)",
-                  color: "#fff",
-                  border: "none",
-                  padding: "9px 18px",
-                  borderRadius: "8px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily: "'DM Sans', sans-serif",
-                  boxShadow: "0 4px 16px rgba(16,185,129,0.25)",
-                  transition: "all 0.2s ease",
-                }}
-                onMouseEnter={e => { e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 6px 20px rgba(16,185,129,0.35)"; }}
-                onMouseLeave={e => { e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = "0 4px 16px rgba(16,185,129,0.25)"; }}
-              >
-                📥 Download PDF
-              </button>
-
-              <button
-                onClick={() => navigate("/dashboard", { state: { target, sensitive, rows, analysis_id, metrics } })}
-                style={{
-                  background: "transparent",
-                  color: "#818cf8",
-                  border: "1px solid rgba(100,119,255,0.25)",
-                  padding: "9px 18px",
-                  borderRadius: "8px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily: "'DM Sans', sans-serif",
-                  transition: "all 0.2s ease",
-                }}
-                onMouseEnter={e => { e.target.style.background = "rgba(100,119,255,0.1)"; e.target.style.borderColor = "rgba(100,119,255,0.4)"; }}
-                onMouseLeave={e => { e.target.style.background = "transparent"; e.target.style.borderColor = "rgba(100,119,255,0.25)"; }}
-              >
-                ← Back to Dashboard
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <style>
-        {`
-          @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .no-print { display: none !important; }
-            /* Remove problematic page-break rule that corrupted PDFs */
-          }
-        `}
-      </style>
-      <p className={`mt-3 font-mono text-3xl font-extrabold tracking-[-0.065em] ${toneClass}`}>
-        {value}
-      </p>
-
-      {helper && (
-        <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
-          {helper}
-        </p>
-      )}
+      <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`mt-3 font-mono text-3xl font-extrabold tracking-[-0.065em] ${toneClass}`}>{value}</p>
+      {helper && <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">{helper}</p>}
     </div>
   );
 }
@@ -444,81 +81,76 @@ function ConfigRow({ label, value }) {
   return (
     <div className="flex flex-col gap-1 border-b border-slate-100 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
       <span className="text-sm font-bold text-slate-500">{label}</span>
-      <span className="font-mono text-sm font-extrabold text-slate-950">{value || "Not available"}</span>
+      <span className="break-all font-mono text-sm font-extrabold text-slate-950">{value || "Not available"}</span>
     </div>
   );
 }
+
+const FALLBACK_STEPS = [
+  { title: "Validate data quality", body: "Check missing values, encoding issues, sample-size imbalance, and whether the target column represents a real decision." },
+  { title: "Investigate group gaps", body: "Review whether the disparity comes from data collection, policy, model features, or historical bias." },
+  { title: "Run mitigation", body: "Compare mitigation strategies on the dashboard before any real-world use." },
+];
 
 export default function ReportPage() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const {
-    target,
-    sensitive,
-    rows = [],
-    columns = [],
-    datasetId = null,
-    metadata = null,
-    source = "local-csv",
-  } = location.state || {};
-
-  const hasRequiredState = Boolean(target && sensitive && Array.isArray(rows) && rows.length);
+  const { file, columns = [], rows, target, sensitive, analysisId, metrics } = location.state || {};
+  const hasState = Boolean(target && sensitive && analysisId && Array.isArray(rows) && rows.length);
 
   const stats = useMemo(
-    () => computeReportStats(rows, target, sensitive),
-    [rows, target, sensitive]
+    () => (hasState ? buildAuditStats({ rows, target, sensitive, metrics }) : null),
+    [hasState, rows, target, sensitive, metrics]
   );
+  const outcomes = useMemo(() => (hasState ? countOutcomes(rows, target) : null), [hasState, rows, target]);
 
-  if (!hasRequiredState) {
-    return <EmptyReportState onBack={() => navigate("/")} />;
-  }
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(Boolean(analysisId));
+  const [reportError, setReportError] = useState("");
 
-  const risk = getRiskMeta(stats.riskLevel);
+  useEffect(() => {
+    if (!analysisId) return undefined;
 
-  const today = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+    let ignore = false;
+    fetchReport(analysisId)
+      .then((data) => {
+        if (!ignore) setReport(data?.report ?? null);
+      })
+      .catch((err) => {
+        if (!ignore) setReportError(err.message);
+      })
+      .finally(() => {
+        if (!ignore) setReportLoading(false);
+      });
 
-  const backToDashboard = () => {
-    navigate("/dashboard", {
-      state: {
-        target,
-        sensitive,
-        rows,
-        columns,
-        datasetId,
-        metadata,
-        source,
-      },
-    });
-  };
+    return () => {
+      ignore = true;
+    };
+  }, [analysisId]);
+
+  if (!hasState) return <EmptyReportState onBack={() => navigate("/")} />;
+
+  const risk = RISK[stats.risk];
+  const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const rejectionRate = 100 - outcomes.selectionRate;
+  const recommendations = Array.isArray(report?.recommendations) ? report.recommendations : [];
 
   return (
     <div className="app-shell">
-      <div className="top-stripe" />
+      <div className="top-stripe print:hidden" />
 
       <main className="page-container py-8 lg:py-10">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={backToDashboard}
-            className="btn btn-secondary w-fit"
-          >
-            <BackIcon />
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
+          <button type="button" onClick={() => navigate("/dashboard", { state: location.state })} className="btn btn-secondary w-fit">
+            <ArrowLeftIcon className="h-4 w-4" strokeWidth={2.6} />
             Back to dashboard
           </button>
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="badge badge-primary">Internal audit document</span>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="btn btn-primary"
-            >
-              <PrintIcon />
+            <button type="button" onClick={() => window.print()} className="btn btn-primary">
+              <PrintIcon className="h-4 w-4" />
               Print / save PDF
             </button>
           </div>
@@ -537,54 +169,31 @@ export default function ReportPage() {
                   <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-emerald-500 text-white shadow-xl shadow-indigo-500/25">
                     <ReportIcon className="h-6 w-6" />
                   </div>
-
                   <div>
-                    <p className="text-sm font-extrabold tracking-[-0.03em] text-slate-950">
-                      BreakBias
-                    </p>
-                    <p className="mt-1 text-[0.7rem] font-extrabold uppercase tracking-[0.14em] text-slate-400">
-                      Fairness Audit Report
-                    </p>
+                    <p className="text-sm font-extrabold tracking-[-0.03em] text-slate-950">BreakBias</p>
+                    <p className="mt-1 text-[0.7rem] font-extrabold uppercase tracking-[0.14em] text-slate-400">Fairness Audit Report</p>
                   </div>
                 </div>
 
                 <h1 className="mt-8 max-w-3xl text-4xl font-extrabold leading-[0.98] tracking-[-0.065em] text-slate-950 md:text-5xl">
                   Algorithmic fairness audit.
                 </h1>
-
                 <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600">
-                  Automated assessment of selection outcomes across demographic groups using the configured
-                  target and sensitive attribute.
+                  Assessment of selection outcomes across groups for the configured target and sensitive attribute.
                 </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[310px] lg:grid-cols-1">
-                <div className={`rounded-2xl border p-5 shadow-sm ${risk.panelClass}`}>
-                  <p className={`text-xs font-extrabold uppercase tracking-wider ${risk.textClass}`}>
-                    Audit risk
-                  </p>
-
-                  <p className={`mt-2 text-2xl font-extrabold tracking-[-0.05em] ${risk.textClass}`}>
-                    {risk.label}
-                  </p>
-
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    {risk.summary}
-                  </p>
+                <div className={`rounded-2xl border p-5 shadow-sm ${risk.panel}`}>
+                  <p className={`text-xs font-extrabold uppercase tracking-wider ${risk.text}`}>Audit risk</p>
+                  <p className={`mt-2 text-2xl font-extrabold tracking-[-0.05em] ${risk.text}`}>{risk.label}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{risk.description}</p>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                    Report generated
-                  </p>
-
-                  <p className="mt-2 font-mono text-sm font-extrabold text-slate-950">
-                    {today}
-                  </p>
-
-                  <p className="mt-2 text-sm font-semibold text-slate-500">
-                    Source: {datasetId ? "Backend dataset" : "Local CSV session"}
-                  </p>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Report generated</p>
+                  <p className="mt-2 font-mono text-sm font-extrabold text-slate-950">{today}</p>
+                  <p className="mt-2 break-all text-sm font-semibold text-slate-500">Source: {file?.name ?? "Uploaded CSV"}</p>
                 </div>
               </div>
             </div>
@@ -595,66 +204,51 @@ export default function ReportPage() {
               <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p className="section-eyebrow">01 · Executive summary</p>
-                  <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.05em] text-slate-950">
-                    Key audit outcome
-                  </h2>
+                  <h2 className="mt-3 text-2xl font-extrabold tracking-[-0.05em] text-slate-950">Key audit outcome</h2>
                 </div>
-
-                <span className={risk.badgeClass}>{risk.label}</span>
+                <span className={risk.badge}>{risk.label}</span>
               </div>
 
-              <div className={`rounded-3xl border p-6 ${risk.panelClass}`}>
-                <p className="text-base font-semibold leading-8 text-slate-700">
-                  The audit analyzed{" "}
-                  <span className="font-mono font-extrabold text-slate-950">
-                    {stats.total.toLocaleString()}
-                  </span>{" "}
-                  records using{" "}
-                  <span className="font-mono font-extrabold text-indigo-700">{target}</span>{" "}
-                  as the decision outcome and{" "}
-                  <span className="font-mono font-extrabold text-violet-700">{sensitive}</span>{" "}
-                  as the sensitive attribute. The global selection rate is{" "}
-                  <span className="font-mono font-extrabold text-slate-950">
-                    {stats.selectionRate.toFixed(1)}%
-                  </span>
-                  , with a measured group disparity gap of{" "}
-                  <span className={`font-mono font-extrabold ${risk.textClass}`}>
-                    {stats.disparityGap.toFixed(1)}%
-                  </span>
-                  .
-                </p>
+              <div className={`rounded-3xl border p-6 ${risk.panel}`}>
+                {reportLoading ? (
+                  <p className="flex items-center gap-3 text-base font-semibold text-slate-600">
+                    <Spinner className="h-5 w-5" />
+                    Generating the written summary…
+                  </p>
+                ) : report?.executive_summary ? (
+                  <div className="space-y-1.5 text-base font-medium leading-8 text-slate-700">
+                    <RichText text={report.executive_summary} />
+                  </div>
+                ) : (
+                  <p className="text-base font-semibold leading-8 text-slate-700">
+                    The audit analysed <span className="font-mono font-extrabold text-slate-950">{outcomes.total.toLocaleString()}</span>{" "}
+                    records using <span className="font-mono font-extrabold text-indigo-700">{target}</span> as the decision outcome
+                    and <span className="font-mono font-extrabold text-violet-700">{sensitive}</span> as the sensitive attribute.
+                    The overall selection rate is{" "}
+                    <span className="font-mono font-extrabold text-slate-950">{outcomes.selectionRate.toFixed(1)}%</span>, with a
+                    group gap of <span className={`font-mono font-extrabold ${risk.text}`}>{stats.gap.toFixed(1)}%</span>.
+                  </p>
+                )}
+
+                {reportError && (
+                  <p className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm font-bold text-amber-700 print:hidden">
+                    Could not load the written report: {reportError}. The numbers below come from the audit and are unaffected.
+                  </p>
+                )}
               </div>
             </section>
 
             <section>
               <p className="section-eyebrow">02 · Dataset summary</p>
-
               <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <SummaryTile label="Total records" value={outcomes.total.toLocaleString()} helper="Rows in the uploaded file" />
+                <SummaryTile label="Selected" value={outcomes.selected.toLocaleString()} helper={`${outcomes.selectionRate.toFixed(1)}% positive rate`} tone="success" />
+                <SummaryTile label="Rejected" value={outcomes.rejected.toLocaleString()} helper={`${rejectionRate.toFixed(1)}% negative rate`} tone="danger" />
                 <SummaryTile
-                  label="Total records"
-                  value={stats.total.toLocaleString()}
-                  helper="Rows included in audit"
-                />
-
-                <SummaryTile
-                  label="Selected"
-                  value={stats.selected.toLocaleString()}
-                  helper={`${stats.selectionRate.toFixed(1)}% positive rate`}
-                  tone="success"
-                />
-
-                <SummaryTile
-                  label="Rejected"
-                  value={stats.rejected.toLocaleString()}
-                  helper={`${stats.rejectionRate.toFixed(1)}% negative rate`}
-                  tone="danger"
-                />
-
-                <SummaryTile
-                  label="Disparity gap"
-                  value={`${stats.disparityGap.toFixed(1)}%`}
-                  helper={`${stats.lowestRate.toFixed(1)}% lowest · ${stats.highestRate.toFixed(1)}% highest`}
-                  tone={stats.riskLevel === "high" ? "danger" : stats.riskLevel === "moderate" ? "warning" : "success"}
+                  label="Group gap"
+                  value={`${stats.gap.toFixed(1)}%`}
+                  helper={`${stats.minRate.toFixed(1)}% lowest · ${stats.maxRate.toFixed(1)}% highest`}
+                  tone={stats.risk === "high" ? "danger" : stats.risk === "moderate" ? "warning" : "success"}
                 />
               </div>
             </section>
@@ -662,18 +256,17 @@ export default function ReportPage() {
             <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
               <div>
                 <p className="section-eyebrow">03 · Audit configuration</p>
-
                 <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-5">
                   <ConfigRow label="Decision column" value={target} />
                   <ConfigRow label="Sensitive attribute" value={sensitive} />
-                  <ConfigRow label="Detected columns" value={columns?.length ? columns.length : "Not provided"} />
-                  <ConfigRow label="Dataset source" value={datasetId ? `Backend: ${datasetId}` : "Local CSV"} />
+                  <ConfigRow label="Detected columns" value={columns.length ? String(columns.length) : "Not provided"} />
+                  <ConfigRow label="Dataset file" value={file?.name} />
+                  <ConfigRow label="Analysis ID" value={analysisId} />
                 </div>
               </div>
 
               <div>
                 <p className="section-eyebrow">04 · Group findings</p>
-
                 <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200 bg-white">
                   <div className="grid grid-cols-[1fr_90px_90px_90px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-400">
                     <span>Group</span>
@@ -682,103 +275,65 @@ export default function ReportPage() {
                     <span className="text-right">Rate</span>
                   </div>
 
-                  {stats.groupEntries.map((entry) => (
-                    <div
-                      key={entry.group}
-                      className="grid grid-cols-[1fr_90px_90px_90px] gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0"
-                    >
-                      <span className="truncate font-mono text-sm font-extrabold text-slate-950">
-                        {entry.group}
-                      </span>
-
-                      <span className="text-right font-mono text-sm font-bold text-emerald-700">
-                        {entry.selected.toLocaleString()}
-                      </span>
-
-                      <span className="text-right font-mono text-sm font-bold text-slate-600">
-                        {entry.total.toLocaleString()}
-                      </span>
-
-                      <span className="text-right font-mono text-sm font-extrabold text-indigo-700">
-                        {entry.selectionRate.toFixed(1)}%
-                      </span>
+                  {stats.entries.map((entry) => (
+                    <div key={entry.group} className="grid grid-cols-[1fr_90px_90px_90px] gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0">
+                      <span className="truncate font-mono text-sm font-extrabold text-slate-950">{entry.group}</span>
+                      <span className="text-right font-mono text-sm font-bold text-emerald-700">{entry.selected != null ? entry.selected.toLocaleString() : "—"}</span>
+                      <span className="text-right font-mono text-sm font-bold text-slate-600">{entry.total != null ? entry.total.toLocaleString() : "—"}</span>
+                      <span className="text-right font-mono text-sm font-extrabold text-indigo-700">{(entry.rate * 100).toFixed(1)}%</span>
                     </div>
                   ))}
                 </div>
+                <p className="mt-2 text-xs font-semibold text-slate-400">
+                  {stats.source === "backend" ? "Rates reported by the audit API." : "Rates computed from the file's labels."}
+                </p>
               </div>
             </section>
 
             <section>
               <p className="section-eyebrow">05 · Rule check</p>
-
-              <div
-                className={`mt-5 rounded-3xl border p-6 ${
-                  stats.fourFifthsFailed
-                    ? "border-rose-100 bg-rose-50"
-                    : "border-emerald-100 bg-emerald-50"
-                }`}
-              >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                  <div
-                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-                      stats.fourFifthsFailed
-                        ? "bg-rose-100 text-rose-700"
-                        : "bg-emerald-100 text-emerald-700"
-                    }`}
-                  >
-                    <ReportIcon />
-                  </div>
-
-                  <div>
-                    <h3
-                      className={`text-xl font-extrabold tracking-[-0.045em] ${
-                        stats.fourFifthsFailed ? "text-rose-700" : "text-emerald-700"
-                      }`}
-                    >
-                      EEOC 4/5ths rule: {stats.fourFifthsFailed ? "Failed" : "Passed"}
-                    </h3>
-
-                    <p className="mt-2 text-sm leading-7 text-slate-600">
-                      {stats.fourFifthsFailed
-                        ? "At least one group has a selection rate below 80% of the highest group selection rate. This simplified check indicates potential adverse impact and should be reviewed carefully."
-                        : "All groups have a selection rate of at least 80% of the highest group selection rate under this simplified check."}
-                    </p>
-                  </div>
-                </div>
+              <div className={`mt-5 rounded-3xl border p-6 ${stats.fourFifthsFailed ? "border-rose-100 bg-rose-50" : "border-emerald-100 bg-emerald-50"}`}>
+                <h3 className={`text-xl font-extrabold tracking-[-0.045em] ${stats.fourFifthsFailed ? "text-rose-700" : "text-emerald-700"}`}>
+                  EEOC 4/5ths rule: {stats.fourFifthsFailed ? "Failed" : "Passed"}
+                </h3>
+                <p className="mt-2 text-sm leading-7 text-slate-600">
+                  {stats.fourFifthsFailed
+                    ? "At least one group is selected at less than 80% of the highest group's rate. This simplified check indicates potential adverse impact and should be reviewed carefully."
+                    : "Every group is selected at 80% or more of the highest group's rate under this simplified check."}
+                </p>
               </div>
             </section>
 
+            {report?.detailed_findings && (
+              <section>
+                <p className="section-eyebrow">06 · Detailed findings</p>
+                <div className="mt-5 space-y-1.5 rounded-3xl border border-slate-200 bg-white p-6 text-sm leading-7 text-slate-600">
+                  <RichText text={report.detailed_findings} />
+                </div>
+              </section>
+            )}
+
             <section>
-              <p className="section-eyebrow">06 · Recommended next steps</p>
+              <p className="section-eyebrow">{report?.detailed_findings ? "07" : "06"} · Recommended next steps</p>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-3">
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="text-base font-extrabold tracking-[-0.035em] text-slate-950">
-                    Validate data quality
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Check missing values, encoding issues, sample size imbalance, and whether the target column represents a real decision.
-                  </p>
+              {recommendations.length > 0 ? (
+                <ul className="mt-5 space-y-3">
+                  {recommendations.map((rec, i) => (
+                    <li key={i} className="rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600 shadow-sm">
+                      {rec}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  {FALLBACK_STEPS.map((s) => (
+                    <div key={s.title} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                      <h3 className="text-base font-extrabold tracking-[-0.035em] text-slate-950">{s.title}</h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">{s.body}</p>
+                    </div>
+                  ))}
                 </div>
-
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="text-base font-extrabold tracking-[-0.035em] text-slate-950">
-                    Investigate group gaps
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Review whether the observed disparity is caused by data collection, policy, model features, or historical bias.
-                  </p>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="text-base font-extrabold tracking-[-0.035em] text-slate-950">
-                    Run mitigation
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Compare pre-processing, in-processing, or post-processing mitigation strategies before real-world deployment.
-                  </p>
-                </div>
-              </div>
+              )}
             </section>
           </div>
 

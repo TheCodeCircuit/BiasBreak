@@ -270,7 +270,7 @@ export default function UploadPage() {
 
             <div>
               <p className="text-sm font-extrabold leading-none tracking-[-0.03em] text-slate-950">
-                BreakBias
+                BiasBreak
               </p>
               <p className="mt-1 text-[0.66rem] font-extrabold uppercase tracking-[0.13em] text-slate-400">
                 Fairness Audit Platform
@@ -437,7 +437,7 @@ export default function UploadPage() {
       <footer className="border-t border-slate-200 bg-white/80 py-5 backdrop-blur-xl">
         <div className="page-container flex flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
           <p className="text-sm font-semibold text-slate-500">
-            BreakBias · Fairness Audit Platform
+            BiasBreak · Fairness Audit Platform
           </p>
 
           <div className="flex flex-wrap justify-center gap-2">

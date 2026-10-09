@@ -237,8 +237,7 @@ export default function ColumnSelectionPage() {
   const columns = location.state?.columns || [];
   const rows = location.state?.rows || [];
   const file = location.state?.file;
-  const metadata = location.state?.metadata || null;
-  const fileName = location.state?.fileName || metadata?.fileName || "Uploaded dataset";
+  const fileName = file?.name || "Uploaded dataset";
 
   const [expandedColumn, setExpandedColumn] = useState(null);
 
@@ -299,7 +298,7 @@ export default function ColumnSelectionPage() {
 
               <div className="min-w-0">
                 <p className="truncate text-sm font-extrabold leading-none tracking-[-0.03em] text-slate-950">
-                  BreakBias
+                  BiasBreak
                 </p>
                 <p className="mt-1 hidden text-[0.66rem] font-extrabold uppercase tracking-[0.13em] text-slate-400 sm:block">
                   Configure Analysis
@@ -412,9 +411,6 @@ export default function ColumnSelectionPage() {
                     <p className="text-xs font-semibold text-slate-400">Auto-detected column structure</p>
                   </div>
                 </div>
-
-        <ColumnSelector columns={columns} rows={rows} file={file} />
-      </div>
                 <span className="badge badge-success">Valid</span>
               </div>
 
@@ -594,11 +590,10 @@ export default function ColumnSelectionPage() {
             </div>
 
             <ColumnSelector
-              columns={columns}
-              rows={rows}
+              columns={columns} 
+              rows={rows} 
+              file={file} 
               colMeta={colMeta}
-              datasetId={location.state?.datasetId || null}
-              metadata={metadata}
             />
           </motion.section>
         </div>

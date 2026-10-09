@@ -1,5 +1,5 @@
 // DashboardPage.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
@@ -7,7 +7,15 @@ import MetricCard from "../components/MetricCard";
 import FairnessChart from "../components/FairnessChart";
 import BiasWarningCard from "../components/BiasWarningCard";
 import MitigationPanel from "../components/MitigationPanel";
-import { analyzeDataset } from "../api/mockBackend";
+import {
+  ArrowRightIcon,
+  CheckCircleIcon,
+  ChevronLeftIcon,
+  DatabaseIcon,
+  ReportIcon,
+  XCircleIcon,
+} from "../components/Icons";
+import { buildAuditStats, countOutcomes, getSelectionRateGap } from "../utils/fairness";
 
 const STEPS = [
   { number: "01", title: "Upload", description: "Dataset added", done: true },
@@ -16,247 +24,27 @@ const STEPS = [
   { number: "04", title: "Report", description: "Generate output" },
 ];
 
-  const { target, sensitive, rows, analysis_id, metrics, file, columns } = location.state || {};
-  
-  let total = metrics?.model_summary?.total_instances || 0;
-  let selected = 0;
-  let rejected = 0;
-
-  if (rows && target) {
-    if (total === 0) total = rows.length;
-    rows.forEach((row) => {
-      if (row[target] == 1) selected++;
-      else rejected++;
-    });
-  }
 const fadeUp = {
   hidden: { opacity: 0, y: 22 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
-  },
+  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
 };
 
 const fadeRight = {
   hidden: { opacity: 0, x: 24 },
-  show: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
-  },
+  show: { opacity: 1, x: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } },
 };
 
 const stagger = {
   hidden: {},
-  show: {
-    transition: {
-      staggerChildren: 0.08,
-    },
-  },
+  show: { transition: { staggerChildren: 0.08 } },
 };
 
 function ShieldLogo() {
   return (
     <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-emerald-500 text-white shadow-lg shadow-indigo-500/25">
-      <svg
-        viewBox="0 0 24 24"
-        className="h-4.5 w-4.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
-    </div>
-  );
-}
-
-function BackIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="m15 18-6-6 6-6" />
-    </svg>
-  );
-}
-
-function ReportIcon({ className = "h-4 w-4" }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M14 2v6h6" />
-      <path d="M8 13h8" />
-      <path d="M8 17h6" />
-    </svg>
-  );
-}
-
-function ArrowRightIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 12h14" />
-      <path d="m12 5 7 7-7 7" />
-    </svg>
-  );
-}
-
-function DatabaseIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <ellipse cx="12" cy="5" rx="9" ry="3" />
-      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-      <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
-    </svg>
-  );
-}
-
-function CheckCircleIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <path d="m22 4-10 10.01-3-3" />
-    </svg>
-  );
-}
-
-function XCircleIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <path d="m15 9-6 6" />
-      <path d="m9 9 6 6" />
-    </svg>
-  );
-}
-
-function LoadingScreen() {
-  return (
-    <div className="app-shell">
-      <div className="top-stripe" />
-
-      <main className="page-container flex min-h-[calc(100vh-4px)] items-center justify-center py-10">
-        <motion.div
-          initial={{ opacity: 0, y: 18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-          className="card card-glow max-w-xl p-8 text-center"
-        >
-          <div className="relative mx-auto h-20 w-20">
-            <div className="absolute inset-0 rounded-full bg-indigo-500/15 blur-2xl" />
-
-            <svg className="absolute inset-0 h-20 w-20 animate-spin" viewBox="0 0 64 64" fill="none">
-              <circle cx="32" cy="32" r="28" stroke="#dbe3f0" strokeWidth="5" />
-              <path
-                d="M32 4a28 28 0 0 1 28 28"
-                stroke="#4f46e5"
-                strokeWidth="5"
-                strokeLinecap="round"
-              />
-            </svg>
-
-            <div className="absolute inset-0 flex items-center justify-center text-indigo-600">
-              <ShieldLogo />
-            </div>
-          </div>
-
-      <motion.div
-        style={{ maxWidth: "1100px", margin: "0 auto", padding: "36px 32px" }}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-      >
-        {/* Top Bar with Back Button */}
-        <div style={{ marginBottom: "24px", display: "flex", justifyContent: "flex-start" }}>
-          <button
-            onClick={() => navigate("/columns", { state: { rows, file, columns } })}
-            style={{
-              background: "transparent",
-              color: "#818cf8",
-              border: "1px solid rgba(100,119,255,0.25)",
-              padding: "8px 16px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontFamily: "'DM Sans', sans-serif",
-              transition: "all 0.2s ease",
-            }}
-            onMouseEnter={e => { e.target.style.background = "rgba(100,119,255,0.1)"; e.target.style.borderColor = "rgba(100,119,255,0.4)"; }}
-            onMouseLeave={e => { e.target.style.background = "transparent"; e.target.style.borderColor = "rgba(100,119,255,0.25)"; }}
-          >
-            ← Reconfigure Columns
-          </button>
-        </div>
-
-        {/* Page header */}
-        <div style={{ marginBottom: "32px" }}>
-          <p style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6477ff", marginBottom: "8px" }}>
-            Fairness Dashboard
-          <h1 className="mt-7 text-3xl font-extrabold tracking-[-0.055em] text-slate-950">
-            Auditing your dataset
-          </h1>
-
-          <p className="mt-3 text-sm leading-7 text-slate-500">
-            Calculating group selection rates, disparity signals, and report-ready fairness insights.
-          </p>
-
-          <div className="mt-6 flex flex-wrap justify-center gap-2">
-            <span className="badge badge-primary">Parsing rows</span>
-            <span className="badge badge-info">Computing rates</span>
-            <span className="badge badge-success">Finding gaps</span>
-          </div>
-        </motion.div>
-      </main>
     </div>
   );
 }
@@ -265,21 +53,15 @@ function EmptyState({ onBack }) {
   return (
     <div className="app-shell">
       <div className="top-stripe" />
-
       <main className="page-container flex min-h-[calc(100vh-4px)] items-center justify-center py-10">
         <div className="card card-glow max-w-xl p-8 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-rose-50 text-rose-600">
             <XCircleIcon />
           </div>
-
-          <h1 className="mt-6 text-3xl font-extrabold tracking-[-0.055em] text-slate-950">
-            Dashboard data missing
-          </h1>
-
+          <h1 className="mt-6 text-3xl font-extrabold tracking-[-0.055em] text-slate-950">Dashboard data missing</h1>
           <p className="mt-3 text-sm leading-7 text-slate-500">
-            This dashboard needs a target column, sensitive attribute, and uploaded rows. Please return to the upload flow.
+            This dashboard needs a completed analysis. Upload a CSV and run the analysis first (a page reload clears it).
           </p>
-
           <button type="button" onClick={onBack} className="btn btn-primary btn-lg mt-6">
             Back to upload
           </button>
@@ -289,46 +71,14 @@ function EmptyState({ onBack }) {
   );
 }
 
-function ErrorState({ onBack, message }) {
-  return (
-    <div className="app-shell">
-      <div className="top-stripe" />
-
-      <main className="page-container flex min-h-[calc(100vh-4px)] items-center justify-center py-10">
-        <div className="card card-glow max-w-xl p-8 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-rose-50 text-rose-600">
-            <XCircleIcon />
-          </div>
-
-          <h1 className="mt-6 text-3xl font-extrabold tracking-[-0.055em] text-slate-950">
-            Audit failed
-          </h1>
-
-          <p className="mt-3 text-sm leading-7 text-slate-500">
-            {message || "Something went wrong while analyzing your dataset."}
-          </p>
-
-          <button type="button" onClick={onBack} className="btn btn-primary btn-lg mt-6">
-            Back to column mapping
-          </button>
-        </div>
-      </main>
-    </div>
-  );
-}
-
 function ConfigPill({ label, value, tone = "indigo" }) {
   const toneClass = tone === "violet" ? "text-violet-700" : "text-indigo-700";
-
   return (
     <div className="flex overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm">
       <span className="border-r border-slate-200 bg-slate-50 px-3 py-2 text-[0.68rem] font-extrabold uppercase tracking-wider text-slate-400">
         {label}
       </span>
-
-      <span className={`max-w-[180px] truncate px-3 py-2 font-mono text-xs font-extrabold ${toneClass}`}>
-        {value}
-      </span>
+      <span className={`max-w-[180px] truncate px-3 py-2 font-mono text-xs font-extrabold ${toneClass}`}>{value}</span>
     </div>
   );
 }
@@ -344,17 +94,13 @@ function ReportBanner({ onGenerateReport }) {
         <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-white/85">
-              <ReportIcon />
+              <ReportIcon className="h-4 w-4" />
               Final step
             </div>
-
-            <h2 className="mt-5 text-3xl font-extrabold tracking-[-0.06em] text-white">
-              Turn this audit into a report.
-            </h2>
-
+            <h2 className="mt-5 text-3xl font-extrabold tracking-[-0.06em] text-white">Turn this audit into a report.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-white/75">
-              Generate a polished fairness report with configuration details, group breakdowns,
-              warnings, mitigation notes, and an executive-ready summary.
+              Generate a fairness report with configuration details, group breakdowns, warnings, mitigation results,
+              and a written summary.
             </p>
           </div>
 
@@ -363,9 +109,9 @@ function ReportBanner({ onGenerateReport }) {
             onClick={onGenerateReport}
             className="inline-flex min-h-[52px] items-center justify-center gap-3 rounded-2xl bg-white px-6 font-extrabold text-indigo-700 shadow-xl shadow-black/15 transition hover:-translate-y-0.5 hover:shadow-2xl"
           >
-            <ReportIcon />
+            <ReportIcon className="h-4 w-4" />
             Generate report
-            <ArrowRightIcon />
+            <ArrowRightIcon className="h-4 w-4" strokeWidth={2.6} />
           </button>
         </div>
       </div>
@@ -377,153 +123,26 @@ export default function DashboardPage() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const {
-    target,
-    sensitive,
-    rows,
-    columns,
-    datasetId = null,
-    metadata = null,
-    source = "local-csv",
-  } = location.state || {};
+  // Canonical router state: { file, columns, rows, target, sensitive, analysisId, metrics }
+  // `metrics` is the raw /analyze/ response. (In the old merge it was ALSO the name of a local
+  // summary object, so `metrics?.group_metrics` was always undefined.)
+  const { file, rows, target, sensitive, analysisId, metrics } = location.state || {};
 
-  const [apiData, setApiData] = useState(null);
-  const [loading, setLoading] = useState(Boolean(rows && target && sensitive));
-  const [error, setError] = useState("");
+  const hasState = Boolean(target && sensitive && analysisId && Array.isArray(rows) && rows.length);
 
-  const hasRequiredState = Boolean(target && sensitive && Array.isArray(rows) && rows.length);
+  const stats = useMemo(
+    () => (hasState ? buildAuditStats({ rows, target, sensitive, metrics }) : null),
+    [hasState, rows, target, sensitive, metrics]
+  );
+  const outcomes = useMemo(() => (hasState ? countOutcomes(rows, target) : null), [hasState, rows, target]);
 
-  useEffect(() => {
-    let ignore = false;
+  if (!hasState) return <EmptyState onBack={() => navigate("/")} />;
 
-    async function runAudit() {
-      if (!hasRequiredState) {
-        setLoading(false);
-        return;
-      }
+  // Back-navigation passes the whole state through, so nothing (notably `file`) is dropped.
+  const backToColumns = () => navigate("/columns", { state: location.state });
+  const generateReport = () => navigate("/report", { state: location.state });
 
-      setLoading(true);
-      setError("");
-
-      try {
-        /*
-          Backend-ready note:
-          Right now this uses analyzeDataset(rows, target, sensitive).
-          Later replace this with something like:
-
-          const res = datasetId
-            ? await analyzeDatasetById(datasetId, { target, sensitive })
-            : await uploadAndAnalyzeDataset({ rows, target, sensitive });
-
-          Keep the response shape similar:
-          { total, selected, rejected, processedRows, groupMetrics, warnings }
-        */
-
-        const result = await analyzeDataset(rows, target, sensitive);
-
-        if (!ignore) {
-          setApiData(result);
-        }
-      } catch {
-        if (!ignore) {
-          setError("The audit engine could not analyze this dataset. Check your selected columns and try again.");
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
-      }
-    }
-
-    runAudit();
-
-    return () => {
-      ignore = true;
-    };
-  }, [hasRequiredState, rows, target, sensitive, datasetId]);
-
-  const metrics = useMemo(() => {
-    if (!apiData) return null;
-
-    const total = Number(apiData.total || 0);
-    const selected = Number(apiData.selected || 0);
-    const rejected = Number(apiData.rejected || 0);
-    const selectionRate = total > 0 ? (selected / total) * 100 : 0;
-    const rejectionRate = total > 0 ? (rejected / total) * 100 : 0;
-
-    return {
-      total,
-      selected,
-      rejected,
-      selectionRate,
-      rejectionRate,
-      selectionRateLabel: selectionRate.toFixed(1),
-      rejectionRateLabel: rejectionRate.toFixed(1),
-    };
-  }, [apiData]);
-
-  if (!hasRequiredState) {
-    return <EmptyState onBack={() => navigate("/")} />;
-  }
-
-  if (loading || !apiData || !metrics) {
-    return <LoadingScreen />;
-  }
-
-  if (error) {
-    return (
-      <ErrorState
-        message={error}
-        onBack={() =>
-          navigate("/columns", {
-            state: {
-              columns: columns || Object.keys(rows?.[0] || {}),
-              rows,
-              datasetId,
-              metadata,
-            },
-          })
-        }
-      />
-    );
-  }
-
-  const processedRows = apiData.processedRows || rows;
-
-  const reportState = {
-    target,
-    sensitive,
-    rows: processedRows,
-    columns: columns || Object.keys(rows?.[0] || {}),
-    datasetId,
-    metadata,
-    source,
-    auditSummary: {
-      total: metrics.total,
-      selected: metrics.selected,
-      rejected: metrics.rejected,
-      selectionRate: metrics.selectionRate,
-      rejectionRate: metrics.rejectionRate,
-    },
-  };
-
-  const backToColumns = () => {
-    navigate("/columns", {
-      state: {
-        columns: columns || Object.keys(rows?.[0] || {}),
-        rows,
-        datasetId,
-        metadata,
-        source,
-      },
-    });
-  };
-
-  const generateReport = () => {
-    navigate("/report", {
-      state: reportState,
-    });
-  };
+  const rejectionRate = 100 - outcomes.selectionRate;
 
   return (
     <div className="app-shell">
@@ -532,23 +151,14 @@ export default function DashboardPage() {
       <nav className="app-nav">
         <div className="page-container flex items-center justify-between gap-5">
           <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              onClick={backToColumns}
-              className="icon-btn"
-              title="Back to column mapping"
-              aria-label="Back to column mapping"
-            >
-              <BackIcon />
+            <button type="button" onClick={backToColumns} className="icon-btn" title="Back to column mapping" aria-label="Back to column mapping">
+              <ChevronLeftIcon className="h-4 w-4" strokeWidth={2.6} />
             </button>
 
             <div className="flex items-center gap-3">
               <ShieldLogo />
-
               <div className="min-w-0">
-                <p className="truncate text-sm font-extrabold leading-none tracking-[-0.03em] text-slate-950">
-                  BreakBias
-                </p>
+                <p className="truncate text-sm font-extrabold leading-none tracking-[-0.03em] text-slate-950">BreakBias</p>
                 <p className="mt-1 hidden text-[0.66rem] font-extrabold uppercase tracking-[0.13em] text-slate-400 sm:block">
                   Fairness Dashboard
                 </p>
@@ -571,74 +181,25 @@ export default function DashboardPage() {
                   >
                     {step.done ? "✓" : step.number}
                   </div>
-
                   <div>
                     <p className="text-xs font-extrabold leading-none text-slate-950">{step.title}</p>
                     <p className="mt-1 text-[0.68rem] font-semibold text-slate-400">{step.description}</p>
                   </div>
                 </div>
-
-                {index < STEPS.length - 1 && (
-                  <div className={`h-px w-8 ${step.done ? "bg-emerald-200" : "bg-slate-200"}`} />
-                )}
+                {index < STEPS.length - 1 && <div className={`h-px w-8 ${step.done ? "bg-emerald-200" : "bg-slate-200"}`} />}
               </div>
             ))}
           </div>
 
           <button type="button" onClick={generateReport} className="btn btn-primary">
-            <ReportIcon />
+            <ReportIcon className="h-4 w-4" />
             <span className="hidden sm:inline">Generate report</span>
           </button>
         </div>
       </nav>
 
-        <FairnessChart 
-          rows={rows} 
-          target={target} 
-          sensitive={sensitive} 
-          groupMetrics={metrics?.group_metrics}
-        />
-        <BiasWarningCard 
-          rows={rows} 
-          target={target} 
-          sensitive={sensitive} 
-          baselineGap={metrics?.disparity_summaries?.find(d => d.metric_name === "Selection Rate Gap")?.value}
-        />
-        <MitigationPanel 
-          rows={rows} 
-          target={target} 
-          sensitive={sensitive} 
-          analysis_id={analysis_id} 
-          featuresAnalyzed={metrics?.dataset_summary?.features_analyzed || []} 
-          baselineGap={metrics?.disparity_summaries?.find(d => d.metric_name === "Selection Rate Gap")?.value}
-        />
-
-        <button
-          onClick={() => navigate("/report", { state: { target, sensitive, rows, analysis_id, metrics } })}
-          style={{
-            marginTop: "28px",
-            background: "linear-gradient(135deg, #6477ff 0%, #818cf8 100%)",
-            color: "#fff",
-            border: "none",
-            padding: "13px 28px",
-            borderRadius: "10px",
-            fontSize: "14px",
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: "'DM Sans', sans-serif",
-            boxShadow: "0 4px 20px rgba(100,119,255,0.35)",
-            transition: "all 0.2s ease",
-            letterSpacing: "0.01em",
-          }}
-          onMouseEnter={e => { e.target.style.transform = "translateY(-2px)"; e.target.style.boxShadow = "0 8px 28px rgba(100,119,255,0.5)"; }}
-          onMouseLeave={e => { e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = "0 4px 20px rgba(100,119,255,0.35)"; }}
       <main className="page-container py-8 lg:py-10">
-        <motion.section
-          variants={stagger}
-          initial="hidden"
-          animate="show"
-          className="hero-panel mb-7"
-        >
+        <motion.section variants={stagger} initial="hidden" animate="show" className="hero-panel mb-7">
           <div className="relative z-10 grid gap-7 p-6 lg:grid-cols-[1fr_0.88fr] lg:p-8">
             <motion.div variants={fadeUp}>
               <div className="section-eyebrow">
@@ -651,36 +212,27 @@ export default function DashboardPage() {
               </h1>
 
               <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600">
-                Reviewing{" "}
-                <span className="font-mono font-extrabold text-slate-950">
-                  {metrics.total.toLocaleString()}
-                </span>{" "}
-                records to measure how{" "}
-                <span className="font-mono font-extrabold text-indigo-700">{target}</span>{" "}
-                outcomes differ across{" "}
-                <span className="font-mono font-extrabold text-violet-700">{sensitive}</span>.
+                Reviewing <span className="font-mono font-extrabold text-slate-950">{outcomes.total.toLocaleString()}</span>{" "}
+                records to measure how <span className="font-mono font-extrabold text-indigo-700">{target}</span>{" "}
+                outcomes differ across <span className="font-mono font-extrabold text-violet-700">{sensitive}</span>.
               </p>
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <ConfigPill label="Target" value={target} tone="indigo" />
                 <ConfigPill label="Sensitive" value={sensitive} tone="violet" />
-                <ConfigPill label="Source" value={datasetId ? "Backend dataset" : "Local CSV"} tone="indigo" />
+                <ConfigPill label="File" value={file?.name ?? "Uploaded CSV"} tone="indigo" />
               </div>
             </motion.div>
 
             <motion.div variants={fadeRight} className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
               <div className="metric-card">
-                <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                  Audit status
-                </p>
+                <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Audit status</p>
                 <div className="mt-3 flex items-center gap-3">
                   <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
                     <CheckCircleIcon />
                   </span>
                   <div>
-                    <p className="text-xl font-extrabold tracking-[-0.04em] text-slate-950">
-                      Complete
-                    </p>
+                    <p className="text-xl font-extrabold tracking-[-0.04em] text-slate-950">Complete</p>
                     <p className="text-sm font-semibold text-slate-500">Ready for report</p>
                   </div>
                 </div>
@@ -688,26 +240,22 @@ export default function DashboardPage() {
 
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2 lg:col-span-1">
                 <div className="metric-card">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                    Selection rate
-                  </p>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Selection rate</p>
                   <p className="mt-3 font-mono text-3xl font-extrabold tracking-[-0.06em] text-slate-950">
-                    {metrics.selectionRateLabel}%
+                    {outcomes.selectionRate.toFixed(1)}%
                   </p>
                   <div className="mt-3 progress-track">
-                    <div className="progress-fill" style={{ width: `${metrics.selectionRate}%` }} />
+                    <div className="progress-fill" style={{ width: `${outcomes.selectionRate}%` }} />
                   </div>
                 </div>
 
                 <div className="metric-card">
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                    Rejection rate
-                  </p>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Rejection rate</p>
                   <p className="mt-3 font-mono text-3xl font-extrabold tracking-[-0.06em] text-slate-950">
-                    {metrics.rejectionRateLabel}%
+                    {rejectionRate.toFixed(1)}%
                   </p>
                   <div className="mt-3 progress-track">
-                    <div className="h-full rounded-full bg-rose-500" style={{ width: `${metrics.rejectionRate}%` }} />
+                    <div className="h-full rounded-full bg-rose-500" style={{ width: `${rejectionRate}%` }} />
                   </div>
                 </div>
               </div>
@@ -715,17 +263,12 @@ export default function DashboardPage() {
           </div>
         </motion.section>
 
-        <motion.section
-          variants={stagger}
-          initial="hidden"
-          animate="show"
-          className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-        >
+        <motion.section variants={stagger} initial="hidden" animate="show" className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <motion.div variants={fadeUp}>
             <MetricCard
               title="Total Records"
-              value={metrics.total.toLocaleString()}
-              sub="Audited in this session"
+              value={outcomes.total.toLocaleString()}
+              sub="In the uploaded file"
               trend="Validated"
               trendDir="neutral"
               type="neutral"
@@ -737,8 +280,8 @@ export default function DashboardPage() {
           <motion.div variants={fadeUp}>
             <MetricCard
               title="Selected"
-              value={metrics.selected.toLocaleString()}
-              sub={`${metrics.selectionRateLabel}% selection rate`}
+              value={outcomes.selected.toLocaleString()}
+              sub={`${outcomes.selectionRate.toFixed(1)}% selection rate`}
               trend="Positive outcomes"
               trendDir="up"
               type="success"
@@ -750,10 +293,10 @@ export default function DashboardPage() {
           <motion.div variants={fadeUp}>
             <MetricCard
               title="Rejected"
-              value={metrics.rejected.toLocaleString()}
-              sub={`${metrics.rejectionRateLabel}% rejection rate`}
-              trend="Negative outcomes"
+              value={outcomes.rejected.toLocaleString()}
+              sub={`${rejectionRate.toFixed(1)}% rejection rate`}
               trendDir="down"
+              trend="Negative outcomes"
               type="danger"
               delay={0.15}
               icon={<XCircleIcon />}
@@ -769,23 +312,27 @@ export default function DashboardPage() {
               trendDir="up"
               type="primary"
               delay={0.2}
-              icon={<ReportIcon className="h-5 w-5" />}
+              icon={<ReportIcon />}
             />
           </motion.div>
         </motion.section>
 
         <div className="grid items-start gap-7 xl:grid-cols-[1fr_390px]">
           <motion.section variants={fadeUp} initial="hidden" animate="show" className="min-w-0">
-            <FairnessChart rows={processedRows} target={target} sensitive={sensitive} />
+            <FairnessChart stats={stats} outcomes={outcomes} target={target} sensitive={sensitive} />
           </motion.section>
 
           <motion.aside variants={stagger} initial="hidden" animate="show" className="space-y-5">
             <motion.div variants={fadeRight}>
-              <BiasWarningCard rows={processedRows} target={target} sensitive={sensitive} />
+              <BiasWarningCard stats={stats} />
             </motion.div>
 
             <motion.div variants={fadeRight}>
-              <MitigationPanel rows={processedRows} target={target} sensitive={sensitive} />
+              <MitigationPanel
+                analysisId={analysisId}
+                featuresAnalyzed={metrics?.dataset_summary?.features_analyzed || []}
+                baselineGap={getSelectionRateGap(metrics?.disparity_summaries)}
+              />
             </motion.div>
           </motion.aside>
         </div>
