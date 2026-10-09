@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { analyzeDataset } from "../api/BreakBiasApi";
+import { analyzeDataset } from "../api/BiasBreakApi";
 import {
   AlertIcon,
   ArrowRightIcon,

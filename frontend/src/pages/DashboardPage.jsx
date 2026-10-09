@@ -158,7 +158,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3">
               <ShieldLogo />
               <div className="min-w-0">
-                <p className="truncate text-sm font-extrabold leading-none tracking-[-0.03em] text-slate-950">BreakBias</p>
+                <p className="truncate text-sm font-extrabold leading-none tracking-[-0.03em] text-slate-950">BiasBreak</p>
                 <p className="mt-1 hidden text-[0.66rem] font-extrabold uppercase tracking-[0.13em] text-slate-400 sm:block">
                   Fairness Dashboard
                 </p>

@@ -1,7 +1,7 @@
 // ReportPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { fetchReport } from "../api/BreakBiasApi";
+import { fetchReport } from "../api/BiasBreakApi";
 import { ArrowLeftIcon, PrintIcon, ReportIcon, Spinner } from "../components/Icons";
 import { RISK, buildAuditStats, countOutcomes } from "../utils/fairness";
 
@@ -170,7 +170,7 @@ export default function ReportPage() {
                     <ReportIcon className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-sm font-extrabold tracking-[-0.03em] text-slate-950">BreakBias</p>
+                    <p className="text-sm font-extrabold tracking-[-0.03em] text-slate-950">BiasBreak</p>
                     <p className="mt-1 text-[0.7rem] font-extrabold uppercase tracking-[0.14em] text-slate-400">Fairness Audit Report</p>
                   </div>
                 </div>

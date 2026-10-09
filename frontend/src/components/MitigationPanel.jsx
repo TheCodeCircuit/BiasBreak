@@ -1,7 +1,7 @@
 // MitigationPanel.jsx
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { runMitigation } from "../api/BreakBiasApi";
+import { runMitigation } from "../api/BiasBreakApi";
 import { getSelectionRateGap, riskLevel, RISK } from "../utils/fairness";
 import { CheckIcon, LightningIcon, ResetIcon, Spinner, ToolIcon } from "./Icons";
 
